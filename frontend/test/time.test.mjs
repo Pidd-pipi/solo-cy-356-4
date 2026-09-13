@@ -63,11 +63,52 @@ test('空值：不显示错误内容，倒计时为空串而非“已逾期”',
 })
 
 test('非法值：不抛异常、不显示错误倒计时', () => {
-  for (const bad of ['not-a-date', '2026-13-40 99:99:99', '9999-99-99']) {
+  for (const bad of [
+    'not-a-date',
+    '2026-13-40 99:99:99',
+    '9999-99-99',
+    '2026-02-31 10:00:00', // 2 月没有 31 日（会进位到 3 月）
+    '2026-04-31 10:00:00', // 4 月只有 30 天
+    '2026-02-29 10:00:00', // 平年无 2-29（会进位到 3-1）
+    '1900-02-29 10:00:00' // 1900 是平年（百年不闰）
+  ]) {
     assert.equal(parseTime(bad), null, `parseTime(${bad}) 应为 null`)
     assert.equal(formatDateTime(bad), '-', `formatDateTime(${bad}) 应为 -`)
     // 无法解析出截止时间 → 倒计时留空，而不是被当成过去时间显示“已逾期”
     assert.equal(countdownText(bad, NOW), '', `countdownText(${bad}) 应为空串`)
+  }
+})
+
+test('不存在的月日组合返回无效，合法闰日保留', () => {
+  // 非法组合（不同月份边界）
+  for (const bad of [
+    '2026-02-30',
+    '2026-02-31',
+    '2026-02-29', // 2026 平年
+    '2026-04-31',
+    '2026-06-31',
+    '2026-09-31',
+    '2026-11-31',
+    '1900-02-29' // 平世纪年
+  ]) {
+    assert.equal(parseTime(bad), null, `${bad} 不存在，应解析为 null`)
+  }
+
+  // 合法闰日：2024（能被 4 整除且非整百年）、2000（400 年闰）必须保留
+  const leap = parseTime('2024-02-29 10:30:00')
+  assert.ok(leap, '2024-02-29 是合法闰日')
+  assert.equal(leap.getFullYear(), 2024)
+  assert.equal(leap.getMonth(), 1)
+  assert.equal(leap.getDate(), 29)
+
+  const leapCentury = parseTime('2000-02-29T08:00:00')
+  assert.ok(leapCentury, '2000-02-29 是合法闰日（400 年闰）')
+  assert.equal(leapCentury.getMonth(), 1)
+  assert.equal(leapCentury.getDate(), 29)
+
+  // 各月大小边界合法
+  for (const ok of ['2026-01-31', '2026-03-31', '2026-04-30', '2026-12-31']) {
+    assert.ok(parseTime(ok), `${ok} 应合法`)
   }
 })
 

@@ -24,8 +24,24 @@ export function parseTime(s?: string | null): Date | null {
     if (!inRange(mo, 1, 12) || !inRange(dy, 1, 31) || !inRange(hh, 0, 23) || !inRange(mi, 0, 59) || !inRange(ss, 0, 59)) {
       return null
     }
-    const d = new Date(sy, mo - 1, dy, hh ?? 0, mi ?? 0, ss ?? 0)
-    return Number.isNaN(d.getTime()) ? null : d
+    const hour = hh ?? 0
+    const min = mi ?? 0
+    const sec = ss ?? 0
+    const d = new Date(sy, mo - 1, dy, hour, min, sec)
+    // 回卷校验：不存在的月日组合（如 2 月 31 日、4 月 31 日）会被 Date 自动进位，
+    // 构造后各组件必须与输入完全一致；闰日 2-29 在闰年天然通过、平年被拒绝。
+    if (
+      Number.isNaN(d.getTime()) ||
+      d.getFullYear() !== sy ||
+      d.getMonth() !== mo - 1 ||
+      d.getDate() !== dy ||
+      d.getHours() !== hour ||
+      d.getMinutes() !== min ||
+      d.getSeconds() !== sec
+    ) {
+      return null
+    }
+    return d
   }
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
