@@ -10,3 +10,6 @@ npm-debug.log*
 # IDE
 .idea/
 .vscode/
+
+# 前端时间测试的临时打包产物
+frontend/test/.tz-bundle.mjs
