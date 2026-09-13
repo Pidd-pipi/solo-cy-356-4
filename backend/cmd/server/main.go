@@ -55,6 +55,7 @@ func main() {
 	// 仓储
 	userRepo := repository.NewUserRepository(db)
 	plotRepo := repository.NewPlotRepository(db)
+	waitlistRepo := repository.NewWaitlistRepository(db)
 	planRepo := repository.NewPlantingPlanRepository(db)
 	harvestRepo := repository.NewHarvestRecordRepository(db)
 	diaryRepo := repository.NewDiaryRepository(db)
@@ -66,6 +67,8 @@ func main() {
 	userService := service.NewUserService(userRepo, logger)
 	plotService := service.NewPlotService(plotRepo, db, logger)
 	auditService := service.NewAuditService(auditRepo, logger)
+	waitlistService := service.NewWaitlistService(waitlistRepo, plotRepo, db, logger, cfg.WaitlistConfirmMinutes)
+	plotService.SetWaitlistPromoter(waitlistService) // 释放事务内触发候补递补
 	planService := service.NewPlantingPlanService(planRepo, plotRepo, plotService, db, logger)
 	harvestService := service.NewHarvestRecordService(harvestRepo, planRepo, db, logger)
 	diaryService := service.NewDiaryService(diaryRepo, planRepo, logger)
@@ -76,6 +79,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService, auditService)
 	plotHandler := handler.NewPlotHandler(plotService, auditService)
+	waitlistHandler := handler.NewWaitlistHandler(waitlistService, auditService)
 	planHandler := handler.NewPlantingPlanHandler(planService, harvestService)
 	harvestHandler := handler.NewHarvestHandler(harvestService, auditService)
 	diaryHandler := handler.NewDiaryHandler(diaryService)
@@ -85,9 +89,16 @@ func main() {
 
 	hub := ws.NewHub(logger, cfg.JWTSecret)
 
+	// 后台任务：逾期未确认自动顺延（启动前先自愈一次历史状态）
+	if _, err := waitlistService.SweepOverdue(); err != nil {
+		logger.Warn(constants.LogInternalError, "err", fmt.Errorf("initial waitlist sweep: %w", err))
+	}
+	sweepStop := make(chan struct{})
+	go waitlistService.StartSweeper(time.Duration(cfg.WaitlistSweepSeconds)*time.Second, sweepStop)
+
 	appRouter := router.New(
 		cfg, logger, rdb,
-		authHandler, userHandler, plotHandler, planHandler, harvestHandler,
+		authHandler, userHandler, plotHandler, waitlistHandler, planHandler, harvestHandler,
 		diaryHandler, communityHandler, auditHandler, statsHandler,
 		auditService, hub,
 	)
@@ -112,6 +123,7 @@ func main() {
 	<-quit
 	ctx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
+	close(sweepStop)
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error(constants.LogServerShutdown, "err", err)
 	}

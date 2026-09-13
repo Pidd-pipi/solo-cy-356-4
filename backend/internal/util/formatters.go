@@ -43,6 +43,28 @@ func PlotStatusText(s string) string {
 		return "已认养"
 	case constants.PlotStatusHarvested:
 		return "待释放"
+	case constants.PlotStatusPending:
+		return "候补确认中"
+	default:
+		return "未知状态"
+	}
+}
+
+// WaitlistStatusText 候补记录状态中文文本。
+func WaitlistStatusText(s string) string {
+	switch constants.WaitlistStatus(s) {
+	case constants.WaitlistWaiting:
+		return "排队中"
+	case constants.WaitlistInvited:
+		return "待确认"
+	case constants.WaitlistConfirmed:
+		return "已确认认养"
+	case constants.WaitlistExpired:
+		return "逾时已顺延"
+	case constants.WaitlistCancelled:
+		return "已放弃"
+	case constants.WaitlistRemoved:
+		return "管理员移除"
 	default:
 		return "未知状态"
 	}

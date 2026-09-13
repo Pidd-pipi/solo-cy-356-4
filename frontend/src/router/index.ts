@@ -12,6 +12,8 @@ const router = createRouter({
       children: [
         { path: '', name: 'dashboard', component: () => import('@/pages/Dashboard.vue') },
         { path: 'plots', name: 'plots', component: () => import('@/pages/PlotMap.vue') },
+        { path: 'waitlist', name: 'my-waitlist', component: () => import('@/pages/MyWaitlist.vue') },
+        { path: 'admin/waitlist', name: 'admin-waitlist', component: () => import('@/pages/WaitlistAdmin.vue'), meta: { admin: true } },
         { path: 'plans', name: 'plans', component: () => import('@/pages/PlantingPlan.vue') },
         { path: 'diaries', name: 'diaries', component: () => import('@/pages/Diary.vue') },
         { path: 'harvests', name: 'harvests', component: () => import('@/pages/Harvest.vue') },

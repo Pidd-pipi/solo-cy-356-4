@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -19,11 +20,19 @@ type PlotService struct {
 	plotRepo repository.PlotRepository
 	db       *gorm.DB
 	logger   *slog.Logger
+	// promoter 释放后触发候补递补；为 nil 时退回到原“释放即回空闲池”流程。
+	// 通过 SetWaitlistPromoter 注入，避免 PlotService ↔ WaitlistService 构造循环。
+	promoter WaitlistPromoter
 }
 
 // NewPlotService 构造地块服务。
 func NewPlotService(plotRepo repository.PlotRepository, db *gorm.DB, logger *slog.Logger) *PlotService {
 	return &PlotService{plotRepo: plotRepo, db: db, logger: logger}
+}
+
+// SetWaitlistPromoter 注入候补递补依赖（main 装配时调用）。
+func (s *PlotService) SetWaitlistPromoter(p WaitlistPromoter) {
+	s.promoter = p
 }
 
 // GetByID 查询地块详情（被地块 handler 与种植计划 service 复用）。
@@ -120,6 +129,9 @@ func (s *PlotService) Adopt(plotID, userID uint, role, username string) (*model.
 			}
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
+		if plot.Status == string(constants.PlotStatusPending) {
+			return util.NewAppError(constants.CodePlotConfirming, 409, fmt.Sprintf("地块 %s 正处于候补确认期，队首确认期间不可被他人认养", plot.Code))
+		}
 		if plot.Status != string(constants.PlotStatusAvailable) {
 			return util.NewAppError(constants.CodePlotNotAvailable, 409, fmt.Sprintf("地块 %s 当前状态为 %s，不可认养", plot.Code, util.PlotStatusText(plot.Status)))
 		}
@@ -154,6 +166,21 @@ func (s *PlotService) Release(plotID, operatorID uint, operatorRole string) (*mo
 		}
 		if plot.Status != string(constants.PlotStatusHarvested) {
 			return util.NewAppError(constants.CodePlotNotAvailable, 409, fmt.Sprintf("地块 %s 当前状态为 %s，仅待释放状态可释放", plot.Code, util.PlotStatusText(plot.Status)))
+		}
+		if s.promoter != nil {
+			// 与候补递补联动（同一事务 + 行锁）：有候选则地块进入 pending 确认期，
+			// 队首收到邀请；无候选则地块回到 available 空闲池。
+			head, pErr := s.promoter.PromoteAfterRelease(tx, plot)
+			if pErr != nil {
+				return pErr
+			}
+			if head != nil {
+				s.logger.Info(constants.LogWaitlistInvited, "waitlist_id", head.ID, "plot_id", head.PlotID, "user_id", head.UserID, "deadline", head.ConfirmExpiresAt.Format(time.RFC3339))
+			} else {
+				s.logger.Info(constants.LogWaitlistQueueEmpty, "plot_id", plot.ID, "back_to", string(constants.PlotStatusAvailable))
+			}
+			released = plot
+			return nil
 		}
 		plot.Status = string(constants.PlotStatusAvailable)
 		plot.AdopterID = nil

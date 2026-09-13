@@ -28,7 +28,26 @@ const (
 	PlotStatusAvailable PlotStatus = "available" // 空闲可认养
 	PlotStatusAdopted   PlotStatus = "adopted"   // 已认养
 	PlotStatusHarvested PlotStatus = "harvested" // 已收成待释放
+	PlotStatusPending   PlotStatus = "pending"   // 释放后候补确认中（队首确认期，他人不可认养）
 )
+
+// WaitlistStatus 候补记录状态机：waiting -> invited -> (confirmed|expired|cancelled|removed)
+type WaitlistStatus string
+
+const (
+	WaitlistWaiting   WaitlistStatus = "waiting"   // 排队中
+	WaitlistInvited   WaitlistStatus = "invited"   // 已邀请队首确认（确认期内锁定地块）
+	WaitlistConfirmed WaitlistStatus = "confirmed" // 队首已确认认养（终态）
+	WaitlistExpired   WaitlistStatus = "expired"   // 逾期未确认自动顺延（终态）
+	WaitlistCancelled WaitlistStatus = "cancelled" // 用户主动放弃（终态）
+	WaitlistRemoved   WaitlistStatus = "removed"   // 管理员移除（终态）
+)
+
+// WaitlistActiveStatuses 有效候补记录状态（同一人同一地块仅允许一条）。
+var WaitlistActiveStatuses = []WaitlistStatus{WaitlistWaiting, WaitlistInvited}
+
+// WaitlistTerminalStatuses 候补终态。
+var WaitlistTerminalStatuses = []WaitlistStatus{WaitlistConfirmed, WaitlistExpired, WaitlistCancelled, WaitlistRemoved}
 
 // SoilType 土壤类型
 type SoilType string

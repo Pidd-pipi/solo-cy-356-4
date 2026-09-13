@@ -3,6 +3,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center">
       <h3 class="page-title">菜园地块认养（GIS 分布）</h3>
       <div>
+        <el-button @click="$router.push('/waitlist')">我的候补</el-button>
         <el-button v-if="isAdmin" type="primary" @click="openCreate">+ 新增地块</el-button>
       </div>
     </div>
@@ -39,9 +40,16 @@
       <el-table-column label="认养人" width="120">
         <template #default="{ row }">{{ row.adopter?.nickname || row.adopter?.username || '-' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="220">
+      <el-table-column label="操作" width="230">
         <template #default="{ row }">
           <el-button v-if="row.status === 'available'" type="success" size="small" @click="adopt(row)">认养</el-button>
+          <el-button
+            v-if="canWaitlist(row)"
+            type="primary"
+            plain
+            size="small"
+            @click="joinWaitlist(row)"
+          >候补登记</el-button>
           <el-button v-if="canRelease(row)" type="warning" size="small" @click="release(row)">释放</el-button>
         </template>
       </el-table-column>
@@ -79,6 +87,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePlotStore } from '@/stores/plot'
 import { createPlot, type Plot } from '@/api/plot'
+import { joinWaitlist as joinWaitlistApi } from '@/api/waitlist'
 import { useAuth } from '@/hooks/useAuth'
 import { usePagination } from '@/hooks/usePagination'
 import DataTable from '@/components/DataTable.vue'
@@ -107,6 +116,7 @@ function mapY(p: Plot) {
 function colorOf(status: string) {
   if (status === 'available') return '#67c23a'
   if (status === 'adopted') return '#e6a23c'
+  if (status === 'pending') return '#f56c6c'
   return '#909399'
 }
 
@@ -121,6 +131,27 @@ async function fetch() {
 
 function canRelease(row: Plot) {
   return row.status === 'harvested' && (role.value === 'admin' || row.adopter_id === user.value?.id)
+}
+
+// 已认养/待释放地块可登记候补（不能候补自己的地块；确认期/空闲地块不开放）
+function canWaitlist(row: Plot) {
+  if (!user.value) return false
+  return (row.status === 'adopted' || row.status === 'harvested') && row.adopter_id !== user.value.id
+}
+
+async function joinWaitlist(row: Plot) {
+  try {
+    await ElMessageBox.confirm(`登记候补地块 ${row.name}（${row.code}）吗？地块释放后将按登记时间依次递补。`, '候补登记', {
+      confirmButtonText: '登记候补',
+      cancelButtonText: '取消',
+      type: 'info'
+    })
+  } catch {
+    return
+  }
+  const res = await joinWaitlistApi(row.id)
+  ElMessage.success(`候补登记成功，当前排队位置：第 ${res.position} 位`)
+  await fetch()
 }
 
 async function adopt(row: Plot) {

@@ -7,11 +7,23 @@ export const RoleText: Record<string, string> = {
   citizen: '城市居民'
 }
 
-export type PlotStatus = 'available' | 'adopted' | 'harvested'
+export type PlotStatus = 'available' | 'adopted' | 'harvested' | 'pending'
 export const PlotStatusMeta: Record<string, { label: string; type: 'success' | 'warning' | 'info' | 'danger' | 'primary' }> = {
   available: { label: '空闲可认养', type: 'success' },
   adopted: { label: '已认养', type: 'warning' },
-  harvested: { label: '待释放', type: 'info' }
+  harvested: { label: '待释放', type: 'info' },
+  pending: { label: '候补确认中', type: 'danger' }
+}
+
+// 候补状态机（与后端 WaitlistStatus 对应，驱动状态徽标与按钮显隐）
+export type WaitlistStatus = 'waiting' | 'invited' | 'confirmed' | 'expired' | 'cancelled' | 'removed'
+export const WaitlistStatusMeta: Record<string, { label: string; type: 'success' | 'warning' | 'info' | 'danger' | 'primary' }> = {
+  waiting: { label: '排队中', type: 'info' },
+  invited: { label: '待确认', type: 'danger' },
+  confirmed: { label: '已确认认养', type: 'success' },
+  expired: { label: '逾时已顺延', type: 'warning' },
+  cancelled: { label: '已放弃', type: 'info' },
+  removed: { label: '管理员移除', type: 'info' }
 }
 
 export type PlanStatus = 'planned' | 'planting' | 'growing' | 'harvesting' | 'completed'

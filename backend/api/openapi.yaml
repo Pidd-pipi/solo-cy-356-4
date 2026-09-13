@@ -8,6 +8,7 @@ servers:
 tags:
   - name: auth
   - name: plots
+  - name: waitlist
   - name: planting-plans
   - name: harvests
   - name: diaries
@@ -52,7 +53,47 @@ paths:
   /plots/{id}/release:
     post:
       tags: [plots]
-      summary: 释放地块
+      summary: 释放地块（存在候补时自动邀请队首，地块进入 pending 确认期）
+      responses: { '200': { description: 成功 } }
+  /plots/{id}/waitlist:
+    post:
+      tags: [waitlist]
+      summary: 登记候补（仅 adopted/harvested 地块；同一人同一地块仅一条有效记录）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: 成功，返回排队位置 } }
+  /waitlist/mine:
+    get:
+      tags: [waitlist]
+      summary: 我的候补（排队位置、确认截止时间；status=all 含历史）
+      responses: { '200': { description: 成功 } }
+  /waitlist/{id}/confirm:
+    post:
+      tags: [waitlist]
+      summary: 队首在限定时间内确认认养（逾期自动顺延）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: 成功 } }
+  /waitlist/{id}/cancel:
+    post:
+      tags: [waitlist]
+      summary: 主动放弃候补（确认期放弃自动顺延下一位）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: 成功 } }
+  /waitlist:
+    get:
+      tags: [waitlist]
+      summary: 管理端查看候补队列（可按 plot_id/status 过滤）
+      responses: { '200': { description: 成功 } }
+  /waitlist/{id}/remove:
+    post:
+      tags: [waitlist]
+      summary: 管理员移除候选（队首移除自动顺延）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: 成功 } }
+  /waitlist/{id}/expire:
+    post:
+      tags: [waitlist]
+      summary: 管理员处理逾期异常（置为 expired 并顺延下一位）
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { description: 成功 } }
   /planting-plans:
     get:

@@ -20,6 +20,8 @@ type PlotRepository interface {
 	FindByCode(code string) (*model.Plot, error)
 	List(pq util.PageQuery, status string) ([]model.Plot, int64, error)
 	CountByStatus() (map[string]int64, error)
+	// FindIDsByStatus 按状态查询地块 ID（候补逾期扫描/状态自愈复用）。
+	FindIDsByStatus(status string) ([]uint, error)
 }
 
 type plotRepository struct {
@@ -108,4 +110,12 @@ func (r *plotRepository) CountByStatus() (map[string]int64, error) {
 		out[v.Status] = v.Count
 	}
 	return out, nil
+}
+
+func (r *plotRepository) FindIDsByStatus(status string) ([]uint, error) {
+	var ids []uint
+	if err := r.db.Model(&model.Plot{}).Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }

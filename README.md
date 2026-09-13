@@ -28,11 +28,12 @@ docker compose up -d --build
 
 ## ✨ 主要功能
 
-1. **地块认养与 GIS 展示**：地图展示地块分布，标注空闲/已认养/待释放状态，展示面积、土壤类型、日照条件，在线认养。
-2. **种植计划与作物推荐**：认养后制定种植计划，按季节推荐适宜作物，生成预期收获时间线（蔬菜 45 天/水果 90 天/香草 35 天）。
-3. **种植日记图文记录**：按播种/浇水/施肥/除虫/收成记录种植过程，支持点赞与评论。
-4. **收成预警与采摘提醒**：近 7 天成熟作物自动提醒，记录采摘重量与品质，生成年度收成统计报表。
-5. **农友社区交流**：种植经验 / 病虫害防治 / 食谱创意 / 线下农耕活动四类帖子，实时动态 WebSocket 广播。
+1. **地块认养与 GIS 展示**：地图展示地块分布，标注空闲/已认养/待释放/候补确认中状态，展示面积、土壤类型、日照条件，在线认养。
+2. **地块候补与递补**：已认养/待释放地块可登记候补（同一人同一地块仅一条有效记录，按登记时间排队）；地块释放后队首在限定时间内确认认养（`WAITLIST_CONFIRM_MINUTES`，默认 30 分钟），确认期内地块锁定不可被他人认养，逾期自动顺延；支持主动放弃、我的候补（排队位置/确认截止倒计时）与管理端队列查看、移除候选、处理逾期异常。
+3. **种植计划与作物推荐**：认养后制定种植计划，按季节推荐适宜作物，生成预期收获时间线（蔬菜 45 天/水果 90 天/香草 35 天）。
+4. **种植日记图文记录**：按播种/浇水/施肥/除虫/收成记录种植过程，支持点赞与评论。
+5. **收成预警与采摘提醒**：近 7 天成熟作物自动提醒，记录采摘重量与品质，生成年度收成统计报表。
+6. **农友社区交流**：种植经验 / 病虫害防治 / 食谱创意 / 线下农耕活动四类帖子，实时动态 WebSocket 广播。
 
 ## 🛠 技术栈
 
@@ -77,7 +78,7 @@ frontend/
 │   ├── components/             # StatusBadge / EmptyState / DataTable / ConfirmDialog
 │   ├── pages/                  # 每个模块一个页面
 │   ├── stores/                 # 按实体拆分 Pinia store
-│   ├── hooks/                  # useAuth / usePagination
+│   ├── hooks/                  # useAuth / usePagination / useNow（候补倒计时）
 │   ├── utils/                  # request.ts（拦截器）/ format.ts
 │   ├── constants/              # 与后端对应的枚举
 │   └── layouts/MainLayout.vue
@@ -98,6 +99,7 @@ README.md
 | --- | --- | --- | --- |
 | 用户 User | `users` | `model/user.go`、`repository/user_repository.go`、`service/user_service.go`、`handler/user_handler.go`、`router/user.go` | `api/auth.ts`、`stores/auth.ts`、`pages/Login.vue`、`pages/Register.vue` |
 | 地块 Plot | `plots` | `model/plot.go`、`repository/plot_repository.go`、`service/plot_service.go`、`handler/plot_handler.go`、`router/plot.go` | `api/plot.ts`、`stores/plot.ts`、`pages/PlotMap.vue` |
+| 候补 WaitlistEntry | `waitlist_entries` | `model/waitlist_entry.go`、`dto/waitlist_dto.go`、`repository/waitlist_repository.go`、`service/waitlist_service.go`、`handler/waitlist_handler.go`、`router/waitlist.go` | `api/waitlist.ts`、`stores/waitlist.ts`、`pages/MyWaitlist.vue`、`pages/WaitlistAdmin.vue` |
 | 种植计划 PlantingPlan | `planting_plans` | `model/planting_plan.go`、`repository/planting_plan_repository.go`、`service/planting_plan_service.go`、`handler/planting_plan_handler.go`、`router/planting_plan.go` | `api/plantingPlan.ts`、`stores/plantingPlan.ts`、`pages/PlantingPlan.vue` |
 | 收成记录 HarvestRecord | `harvest_records` | `model/harvest_record.go`、`repository/harvest_record_repository.go`、`service/harvest_record_service.go`、`handler/harvest_handler.go`、`router/harvest.go` | `api/harvest.ts`、`pages/Harvest.vue` |
 | 种植日记 DiaryEntry | `diary_entries` / `diary_comments` | `model/diary_entry.go`、`repository/diary_entry_repository.go`、`service/diary_service.go`、`handler/diary_handler.go`、`router/diary.go` | `api/diary.ts`、`stores/diary.ts`、`pages/Diary.vue` |
@@ -116,7 +118,8 @@ README.md
 | 枚举 | 取值 | 后端出现位置 |
 | --- | --- | --- |
 | RoleType 角色 | admin / farmer / citizen | `constants/enums.go`、`model/user.go`、`dto/user_dto.go`、`service/user_service.go`（ChangeRole 校验）、`middleware/rbac.go`、`middleware/audit.go`、`handler/planting_plan_handler.go`、`handler/harvest_handler.go`、`handler/diary_handler.go`、`util/formatters.go`、`log_templates.go`、`error_codes.go`、`database/database.go`（种子数据） |
-| PlotStatus 地块状态 | available / adopted / harvested | `constants/enums.go`、`model/plot.go`、`dto/plot_dto.go`、`service/plot_service.go`（认养/释放状态机）、`repository/plot_repository.go`（过滤）、`util/formatters.go`、`log_templates.go`、`database/database.go`（种子数据）、`api/openapi.yaml` |
+| PlotStatus 地块状态 | available / adopted / harvested / pending | `constants/enums.go`、`model/plot.go`、`dto/plot_dto.go`、`service/plot_service.go`（认养/释放状态机，pending 时拒绝他人认养）、`service/waitlist_service.go`（释放递补 pending→adopted/available）、`repository/plot_repository.go`（过滤/FindIDsByStatus）、`util/formatters.go`、`log_templates.go`、`database/database.go`（种子数据）、`api/openapi.yaml`、前端 `constants/index.ts`（PlotStatusMeta）、`pages/PlotMap.vue`（地图着色/按钮显隐） |
+| WaitlistStatus 候补状态 | waiting / invited / confirmed / expired / cancelled / removed | `constants/enums.go`（WaitlistStatus、WaitlistActiveStatuses）、`model/waitlist_entry.go`（IsActive/MarkInvited/MarkTerminal）、`dto/waitlist_dto.go`、`repository/waitlist_repository.go`（状态 IN 过滤/队首排序）、`service/waitlist_service.go`（候补状态机）、`handler/waitlist_handler.go`、`util/formatters.go`（WaitlistStatusText）、`error_codes.go`（CodeWaitlist* 2010~2016）、`log_templates.go`（LogWaitlist*）、`messages.go`、`api/openapi.yaml`、前端 `constants/index.ts`（WaitlistStatusMeta）、`pages/MyWaitlist.vue`、`pages/WaitlistAdmin.vue`（徽标/按钮显隐） |
 | PlanStatus 种植计划状态 | planned / planting / growing / harvesting / completed | `constants/enums.go`、`model/planting_plan.go`、`dto/planting_plan_dto.go`（oneof 校验）、`service/planting_plan_service.go`（PlanStatusTransitions 状态机）、`handler/planting_plan_handler.go`、`util/formatters.go`、`log_templates.go`、`error_codes.go`（CodePlanStateNotAllowed）、`database/database.go`（种子数据）、前端 `constants/index.ts`（PlanStatusMeta / PlanStatusNext 按钮显隐） |
 | CropType 作物类型 | vegetable / fruit / herb | `constants/enums.go`、`model/planting_plan.go`、`dto/planting_plan_dto.go`、`service/planting_plan_service.go`（成熟时间估算）、`util/formatters.go`、`repository/harvest_record_repository.go`（分组统计）、`database/database.go` |
 | Season 季节 | spring / summer / autumn / winter | `constants/enums.go`、`dto/planting_plan_dto.go`、`service/planting_plan_service.go`（SeasonCrops 推荐表）、`util/formatters.go`、`database/database.go`、前端 `pages/PlantingPlan.vue`、`pages/Dashboard.vue` |
@@ -151,8 +154,19 @@ README.md
 | GET | `/plots/:id` | 地块详情 | 公开 |
 | POST | `/plots` | 创建地块 | 管理员 |
 | PUT | `/plots/:id` | 更新地块 | 管理员 |
-| POST | `/plots/:id/adopt` | 认养地块（事务 + FOR UPDATE） | 登录 |
-| POST | `/plots/:id/release` | 释放地块 | 认养人/管理员 |
+| POST | `/plots/:id/adopt` | 认养地块（事务 + FOR UPDATE；pending 确认期返回 2015 拒绝） | 登录 |
+| POST | `/plots/:id/release` | 释放地块（有候补时自动邀请队首、地块转 pending；无候补回 available） | 认养人/管理员 |
+
+### 地块候补与递补
+| 方法 | 路径 | 说明 | 鉴权 |
+| --- | --- | --- | --- |
+| POST | `/plots/:id/waitlist` | 登记候补（仅 adopted/harvested；同人同地块仅一条有效记录，返回排队位置） | 登录 |
+| GET | `/waitlist/mine` | 我的候补（排队位置、确认截止时间、剩余秒数；`?status=all` 含历史） | 登录 |
+| POST | `/waitlist/:id/confirm` | 队首在限定时间内确认认养（逾期返回 2014 并自动顺延） | 候选本人 |
+| POST | `/waitlist/:id/cancel` | 主动放弃候补（invited 放弃后自动顺延下一位） | 候选本人 |
+| GET | `/waitlist` | 候补队列（`?plot_id=&status=` 过滤） | 管理员 |
+| POST | `/waitlist/:id/remove` | 移除候选（队首移除自动顺延） | 管理员 |
+| POST | `/waitlist/:id/expire` | 处理逾期异常（置 expired 并顺延下一位） | 管理员 |
 
 ### 种植计划
 | 方法 | 路径 | 说明 | 鉴权 |
@@ -207,6 +221,7 @@ README.md
 - `GET /stats/annual`（收成统计接口）与 `GET /planting-plans/stats`（种植计划统计）**复用同一个 service 方法** `HarvestRecordService.AnnualStats`。
 - `GET /plots/:id`（地块详情接口）与创建种植计划 `POST /planting-plans` **复用同一个 service 方法** `PlotService.GetByID`。
 - 分页 `util.Paginate` 被全部 repository 复用；`ListByUser` 系列仓储方法被计划/收成列表接口复用。
+- 候补与原认养流程**复用同一事务/行锁**：`PlotService.Release` 在释放事务内通过 `WaitlistPromoter.PromoteAfterRelease` 触发递补；`WaitlistService.Confirm` 与 `PlotService.Adopt` 共用地块 `FOR UPDATE` 行锁与 `available/adopted` 状态规则；我的候补与管理端队列复用 `WaitlistService.withPositions` / `ToViewDTO`。
 
 ## 🔌 API 调用示例（curl，含 JWT 请求头）
 
@@ -242,6 +257,24 @@ curl -s "http://localhost:29516/api/v1/stats/annual?year=2026" \
 # 8. 审计日志（管理员）
 curl -s "http://localhost:29516/api/v1/audit-logs" \
   -H "Authorization: Bearer $TOKEN"
+
+# 9. 登记地块候补（已认养/待释放地块）
+curl -s -X POST http://localhost:29516/api/v1/plots/2/waitlist \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"remark":"想要番茄地"}'
+
+# 10. 我的候补（排队位置 position、确认截止时间 confirm_expires_at、剩余秒数 remain_seconds）
+curl -s "http://localhost:29516/api/v1/waitlist/mine" -H "Authorization: Bearer $TOKEN"
+
+# 11. 队首在限定时间内确认认养（id 为候补记录 id；逾期返回 code=2014 并自动顺延）
+curl -s -X POST http://localhost:29516/api/v1/waitlist/1/confirm -H "Authorization: Bearer $TOKEN"
+
+# 12. 主动放弃候补
+curl -s -X POST http://localhost:29516/api/v1/waitlist/1/cancel -H "Authorization: Bearer $TOKEN"
+
+# 13. 管理端候补队列 / 移除候选 / 处理逾期异常（需管理员 token）
+curl -s "http://localhost:29516/api/v1/waitlist?plot_id=2" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:29516/api/v1/waitlist/1/remove -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"remark":"资料异常"}'
+curl -s -X POST http://localhost:29516/api/v1/waitlist/1/expire -H "Authorization: Bearer $TOKEN"
 ```
 
 ## 🐳 Docker 部署说明
@@ -252,6 +285,7 @@ curl -s "http://localhost:29516/api/v1/audit-logs" \
   - 后端未启动：`docker compose logs backend` 查看数据库连接是否成功。
   - 端口冲突：修改 `.env` 中 `FRONTEND_PORT` / `BACKEND_PORT` / `DB_PORT` / `REDIS_PORT` 后重新 `docker compose up -d`。
   - 中文目录名：本项目所有路径均在容器内固定为 `/app`，与宿主机目录名无关，可在任意目录名（含中文）下启动。
+  - 候补确认时长：通过 `.env` 中 `WAITLIST_CONFIRM_MINUTES`（默认 30 分钟）调整队首确认认养的限定时间，`WAITLIST_SWEEP_SECONDS`（默认 30 秒）调整后台逾期扫描间隔。
 
 ## 💻 本地开发（备选）
 

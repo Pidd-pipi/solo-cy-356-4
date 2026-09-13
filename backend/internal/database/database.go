@@ -27,6 +27,7 @@ var Models = []interface{}{
 	&model.DiaryComment{},
 	&model.CommunityPost{},
 	&model.CommunityComment{},
+	&model.WaitlistEntry{},
 	&model.AuditLog{},
 }
 

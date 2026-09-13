@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plots_status ON plots(status);
+
+-- 地块候补与递补：active_key 仅对有效记录（waiting/invited）为 'active'，
+-- 终态记录为 NULL（PG 唯一索引中 NULL 互不相同，终态后可重新候补）。
+CREATE TABLE IF NOT EXISTS waitlist_entries (
+    id BIGSERIAL PRIMARY KEY,
+    plot_id BIGINT NOT NULL REFERENCES plots(id),
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    active_key VARCHAR(16),
+    status VARCHAR(32) NOT NULL DEFAULT 'waiting',
+    invited_at TIMESTAMPTZ,
+    confirm_expires_at TIMESTAMPTZ,
+    confirmed_at TIMESTAMPTZ,
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    remark VARCHAR(256),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_waitlist_active UNIQUE (plot_id, user_id, active_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_waitlist_queue ON waitlist_entries(plot_id, status, registered_at);
+CREATE INDEX IF NOT EXISTS idx_waitlist_user ON waitlist_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_waitlist_expires ON waitlist_entries(confirm_expires_at);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON planting_plans(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_status ON planting_plans(status);
 CREATE INDEX IF NOT EXISTS idx_harvest_user ON harvest_records(user_id);

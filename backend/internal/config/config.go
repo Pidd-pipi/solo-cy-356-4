@@ -21,6 +21,10 @@ type Config struct {
 	RedisDB        int    `env:"REDIS_DB" envDefault:"0"`
 	JWTSecret      string `env:"JWT_SECRET" envDefault:"change_me_to_a_long_random_string"`
 	JWTExpireHours int    `env:"JWT_EXPIRE_HOURS" envDefault:"72"`
+	// WaitlistConfirmMinutes 队首确认认养的限定时间（分钟），逾期自动顺延。
+	WaitlistConfirmMinutes int `env:"WAITLIST_CONFIRM_MINUTES" envDefault:"30"`
+	// WaitlistSweepSeconds 后台逾期扫描间隔（秒）。
+	WaitlistSweepSeconds int `env:"WAITLIST_SWEEP_SECONDS" envDefault:"30"`
 }
 
 // Load 从环境变量加载配置。
