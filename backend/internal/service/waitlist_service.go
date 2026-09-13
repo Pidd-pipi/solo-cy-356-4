@@ -18,6 +18,11 @@ import (
 // 默认队首确认时长（分钟），配置缺省/非法时兜底。
 const defaultConfirmTTL = 30 * time.Minute
 
+// waitlistPreLockHook 测试接缝：进入事务后、按「地块 → 候补行」加锁前回调，
+// 用于确定性模拟“候补排队时地块恰好释放、本人刚被提升为 invited”后加锁读到的状态。
+// 生产环境恒为 nil。
+var waitlistPreLockHook func(tx *gorm.DB, entryID uint)
+
 // WaitlistView 候补记录 + 实时排队位置（position 从 1 开始，终态记录为 0）。
 type WaitlistView struct {
 	Entry    model.WaitlistEntry
@@ -220,6 +225,10 @@ func (s *WaitlistService) Confirm(entryID, userID uint, role, username string) (
 }
 
 // Cancel 用户主动放弃候补（waiting 直接终止；invited 终止后自动顺延下一位）。
+//
+// 交错场景：事务外预读时记录可能还是 waiting，但持有地块锁前释放流程恰好把它提升为
+// invited。因此统一按「地块 → 候补行」顺序加锁，并以事务内重读的最新状态为准，
+// 保证放弃后地块不会停在 pending（必然顺延下一位或回到空闲池）。
 func (s *WaitlistService) Cancel(entryID, userID uint, role, username string) (*model.WaitlistEntry, error) {
 	var entry *model.WaitlistEntry
 	var advanced *model.WaitlistEntry
@@ -231,14 +240,12 @@ func (s *WaitlistService) Cancel(entryID, userID uint, role, username string) (*
 			}
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
-		// invited 放弃会顺延，涉及地块，按「地块 → 候补行」顺序加锁；
-		// waiting 放弃只需候补行锁（不申请地块锁，不构成死锁环）。
-		var plot *model.Plot
-		if pre.Status == string(constants.WaitlistInvited) {
-			plot, err = s.plotRepo.FindByIDForUpdate(tx, pre.PlotID)
-			if err != nil {
-				return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
-			}
+		if waitlistPreLockHook != nil {
+			waitlistPreLockHook(tx, entryID)
+		}
+		plot, err := s.plotRepo.FindByIDForUpdate(tx, pre.PlotID)
+		if err != nil {
+			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
 		entry, err = s.waitRepo.FindByIDForUpdate(tx, entryID)
 		if err != nil {
@@ -250,13 +257,15 @@ func (s *WaitlistService) Cancel(entryID, userID uint, role, username string) (*
 		if !entry.IsActive() {
 			return util.NewAppError(constants.CodeWaitlistAlreadyProcessed, 409, fmt.Sprintf("候补 id=%d 当前状态为 %s，无需放弃", entryID, util.WaitlistStatusText(entry.Status)))
 		}
+		// 以事务内重读的最新状态为准：可能在预读后被释放流程提升为 invited。
 		wasInvited := entry.Status == string(constants.WaitlistInvited)
 		now := time.Now()
 		entry.MarkTerminal(string(constants.WaitlistCancelled), now)
 		if err := s.waitRepo.Update(tx, entry); err != nil {
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
-		if wasInvited && plot != nil && plot.Status == string(constants.PlotStatusPending) {
+		// 放弃的是确认期队首，地块必须继续顺延给下一位或回到空闲池。
+		if wasInvited && plot.Status == string(constants.PlotStatusPending) {
 			advanced, err = s.advanceLocked(tx, plot, now)
 			return err
 		}
@@ -273,6 +282,9 @@ func (s *WaitlistService) Cancel(entryID, userID uint, role, username string) (*
 }
 
 // AdminRemove 管理员移除候选；若移除的是确认期队首则自动顺延下一位。
+//
+// 与 Cancel 同样处理交错场景：是否为队首以事务内「地块 → 候补行」加锁后重读的
+// 最新状态为准，避免预读 waiting、释放并发提升为 invited 后地块停在 pending。
 func (s *WaitlistService) AdminRemove(entryID, operatorID uint, operatorRole, remark string) (*model.WaitlistEntry, error) {
 	var entry *model.WaitlistEntry
 	var advanced *model.WaitlistEntry
@@ -284,12 +296,12 @@ func (s *WaitlistService) AdminRemove(entryID, operatorID uint, operatorRole, re
 			}
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
-		var plot *model.Plot
-		if pre.Status == string(constants.WaitlistInvited) {
-			plot, err = s.plotRepo.FindByIDForUpdate(tx, pre.PlotID)
-			if err != nil {
-				return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
-			}
+		if waitlistPreLockHook != nil {
+			waitlistPreLockHook(tx, entryID)
+		}
+		plot, err := s.plotRepo.FindByIDForUpdate(tx, pre.PlotID)
+		if err != nil {
+			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
 		entry, err = s.waitRepo.FindByIDForUpdate(tx, entryID)
 		if err != nil {
@@ -311,7 +323,8 @@ func (s *WaitlistService) AdminRemove(entryID, operatorID uint, operatorRole, re
 		if err := s.waitRepo.Update(tx, entry); err != nil {
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
-		if wasInvited && plot != nil && plot.Status == string(constants.PlotStatusPending) {
+		// 移除的是确认期队首，地块必须继续顺延给下一位或回到空闲池。
+		if wasInvited && plot.Status == string(constants.PlotStatusPending) {
 			advanced, err = s.advanceLocked(tx, plot, now)
 			return err
 		}

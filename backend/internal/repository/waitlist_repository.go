@@ -193,10 +193,13 @@ func (r *waitlistRepository) ListByUser(userID uint, status string, pq util.Page
 	var list []model.WaitlistEntry
 	var total int64
 	q := r.db.Model(&model.WaitlistEntry{}).Preload("Plot").Where("user_id = ?", userID)
-	if status != "" {
-		q = q.Where("status = ?", status)
-	} else {
+	switch {
+	case status == "" || status == "active":
+		// 默认仅有效记录
 		q = q.Where("status IN ?", waitlistActiveStatuses())
+	case status != "all":
+		// "all" 为不过滤（含已取消/已逾期/已移除等历史终态）
+		q = q.Where("status = ?", status)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -238,7 +241,7 @@ func (r *waitlistRepository) ListAll(plotID uint, status string, pq util.PageQue
 	if plotID > 0 {
 		q = q.Where("plot_id = ?", plotID)
 	}
-	if status != "" {
+	if status != "" && status != "all" {
 		q = q.Where("status = ?", status)
 	}
 	if err := q.Count(&total).Error; err != nil {
