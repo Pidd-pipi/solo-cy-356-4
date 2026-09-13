@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -442,6 +443,59 @@ func TestWaitlistAPI_DuplicateOperationsConflict(t *testing.T) {
 	plot, err := env.plotSvc.GetByID(env.plotA)
 	if err != nil || plot.Status != string(constants.PlotStatusPending) {
 		t.Fatalf("plot A after remove: status=%s err=%v, want pending", plot.Status, err)
+	}
+}
+
+// 面向外部接口：受邀队首拿到的截止时间必须是带时区的绝对时刻（RFC3339，Z 结尾），
+// 且距现在约为确认窗口（30 分钟），与服务器所处时区无关——上海页面据此计算倒计时不会多 8 小时。
+func TestWaitlistAPI_DeadlineIsAbsoluteTimestamp(t *testing.T) {
+	env := newWaitlistAPITestEnv(t)
+
+	// u1 在地块 A 上已是受邀队首
+	status, resp := env.do(http.MethodGet, "/api/v1/waitlist/mine", env.u1Token, nil)
+	if status != http.StatusOK {
+		t.Fatalf("mine: status=%d msg=%s", status, resp.Message)
+	}
+	var mine struct {
+		List []struct {
+			Status           string `json:"status"`
+			ConfirmExpiresAt string `json:"confirm_expires_at"`
+			RegisteredAt     string `json:"registered_at"`
+			RemainSeconds    int64  `json:"remain_seconds"`
+		} `json:"list"`
+	}
+	json.Unmarshal(resp.Data, &mine)
+	var invited struct {
+		ConfirmExpiresAt string
+		RegisteredAt     string
+		RemainSeconds    int64
+	}
+	for _, item := range mine.List {
+		if item.Status == "invited" {
+			invited.ConfirmExpiresAt = item.ConfirmExpiresAt
+			invited.RegisteredAt = item.RegisteredAt
+			invited.RemainSeconds = item.RemainSeconds
+		}
+	}
+	if invited.ConfirmExpiresAt == "" {
+		t.Fatal("invited head entry not found")
+	}
+	if !strings.HasSuffix(invited.ConfirmExpiresAt, "Z") {
+		t.Fatalf("confirm_expires_at = %q, want RFC3339 UTC with Z suffix", invited.ConfirmExpiresAt)
+	}
+	deadline, err := time.Parse(time.RFC3339, invited.ConfirmExpiresAt)
+	if err != nil {
+		t.Fatalf("confirm_expires_at not RFC3339: %v", err)
+	}
+	if _, err := time.Parse(time.RFC3339, invited.RegisteredAt); err != nil {
+		t.Fatalf("registered_at not RFC3339: %v", err)
+	}
+	d := time.Until(deadline)
+	if d < 29*time.Minute || d > 30*time.Minute {
+		t.Fatalf("deadline distance = %v, want ~30m (no 8h timezone drift)", d)
+	}
+	if invited.RemainSeconds <= 0 || invited.RemainSeconds > int64((30*time.Minute).Seconds()) {
+		t.Fatalf("remain_seconds = %d, want within (0,1800]", invited.RemainSeconds)
 	}
 }
 

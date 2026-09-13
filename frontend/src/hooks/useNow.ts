@@ -1,4 +1,5 @@
 import { onUnmounted, ref } from 'vue'
+import { parseTime } from '@/utils/format'
 
 // 共享时钟 hook：每 interval 毫秒刷新当前时间（候补确认倒计时复用）。
 export function useNow(intervalMs = 1000) {
@@ -10,10 +11,12 @@ export function useNow(intervalMs = 1000) {
   return now
 }
 
-// 距截止时间的倒计时文本 mm:ss / hh:mm:ss；已逾期返回空串。
+// 距截止时间的倒计时文本 mm:ss / hh:mm:ss；已逾期返回“已逾期”。
+// 截止时间为带时区的绝对时刻（RFC3339 UTC），与浏览器所处时区无关。
 export function countdownText(expiresAt?: string | null, now: Date = new Date()): string {
-  if (!expiresAt) return ''
-  const remain = new Date(expiresAt.replace(' ', 'T')).getTime() - now.getTime()
+  const deadline = parseTime(expiresAt)
+  if (!deadline) return ''
+  const remain = deadline.getTime() - now.getTime()
   if (remain <= 0) return '已逾期'
   const total = Math.floor(remain / 1000)
   const h = Math.floor(total / 3600)

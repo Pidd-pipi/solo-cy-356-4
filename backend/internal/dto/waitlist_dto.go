@@ -77,9 +77,11 @@ func ToWaitlistOutDTO(e *model.WaitlistEntry, position int) *WaitlistOutDTO {
 	return out
 }
 
+// formatTime 时间统一以带时区的绝对时刻（RFC3339，UTC，Z 结尾）下发，
+// 避免“无时区墙上时间”被不同时区的浏览器按本地时区错解（如 UTC 服务 + 上海页面差 8 小时）。
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("2006-01-02 15:04:05")
+	return t.UTC().Format(time.RFC3339)
 }
